@@ -26,6 +26,9 @@
   "bin": {
     "octane-skills": "bin/octane-skills.mjs"
   },
+  "scripts": {
+    "test": "node test/contract.mjs"
+  },
   "engines": {
     "node": ">=20"
   },

@@ -18,6 +18,7 @@ npx @octane-house/skills-cli update --dest .octane/skills
 # Agent-facing contract
 npx @octane-house/skills-cli schema
 npx @octane-house/skills-cli add shader-gradient --dry-run --format json
+npm test
 ```
 
 The package only downloads Markdown instruction payloads and writes a lock
