@@ -9,7 +9,7 @@ const CLI_VERSION = "0.2.0";
 const SCHEMA_VERSION = "1.0.0";
 const args = process.argv.slice(2);
 const command = args[0] || "list";
-const needsCatalog = new Set(["list", "add", "plan", "update"]);
+const needsCatalog = new Set(["list", "add", "plan", "update", "verify"]);
 
 function option(name, fallback) {
   const index = args.indexOf(name);
@@ -70,6 +70,7 @@ const SCHEMA = {
     "add-url": { mutates: true, supports: ["--dry-run"], output: "install" },
     plan: { mutates: false, output: "install_plan" },
     search: { mutates: false, output: "directory_results" },
+    verify: { mutates: false, output: "verification" },
     init: { mutates: true, supports: ["--dry-run"], output: "scaffold" },
     update: { mutates: true, supports: ["--dry-run"], output: "update" },
     mcp: { mutates: false, output: "mcp_config" },
@@ -391,6 +392,55 @@ function planSkill(catalog, slug) {
   };
 }
 
+async function verifyCatalog(catalog) {
+  const entries = Array.isArray(catalog.skills) ? catalog.skills : [];
+  const checks = [];
+  const check = (id, ok, details = {}) => checks.push({ id, ok, ...details });
+  const slugs = entries.map((skill) => skill.slug).sort();
+
+  check("catalog.http", true, { manifest: manifestUrl() });
+  check("catalog.non-empty", entries.length > 0, { count: entries.length });
+  check("catalog.unique-slugs", new Set(slugs).size === slugs.length, { slugs });
+  check(
+    "catalog.entry-shape",
+    entries.every(
+      (skill) =>
+        typeof skill.slug === "string" &&
+        typeof skill.name === "string" &&
+        typeof skill.category === "string" &&
+        typeof skill.detailUrl === "string" &&
+        typeof skill.skillUrl === "string" &&
+        typeof skill.rawUrl === "string",
+    ),
+    { count: entries.length },
+  );
+
+  const routeResults = await Promise.all(
+    entries.flatMap((skill) =>
+      [skill.detailUrl, skill.skillUrl, skill.rawUrl].map(async (path) => {
+        const response = await fetch(new URL(path, manifestUrl()));
+        return { slug: skill.slug, path, status: response.status };
+      }),
+    ),
+  );
+  for (const route of routeResults) {
+    check(`route:${route.slug}:${route.path}`, route.status === 200, {
+      status: route.status,
+    });
+  }
+
+  const failed = checks.filter((item) => !item.ok);
+  return {
+    action: "skills/verify",
+    manifest: manifestUrl(),
+    skillCount: entries.length,
+    checks,
+    passed: checks.length - failed.length,
+    failed: failed.length,
+    mutationPerformed: false,
+  };
+}
+
 function mcpConfig() {
   const endpoint = option("--url", DEFAULT_MANIFEST.replace("/skills/catalog", "/mcp"));
   const name = option("--name", "octane-house");
@@ -432,6 +482,7 @@ Commands:
   add-url <url>                Install a Markdown or GitHub tree/blob skill URL
   plan <slug>                 Print a non-mutating install plan
   search <query>               Search skills.sh for intake candidates
+  verify                       Verify catalog and public resource routes
   init <slug>                  Scaffold a new Octane Skill repository
   update                       Refresh installed skills from the lockfile
   mcp config                   Print an MCP client command and JSON config
@@ -468,6 +519,10 @@ Options:
   } else if (command === "plan") {
     const data = planSkill(catalog, args[1]);
     emitSuccess(data, JSON.stringify(data, null, 2));
+  } else if (command === "verify") {
+    const data = await verifyCatalog(catalog);
+    emitSuccess(data, `${data.failed ? "Failed" : "Verified"} ${data.skillCount} skill${data.skillCount === 1 ? "" : "s"} (${data.passed} checks)`);
+    if (data.failed) process.exitCode = 1;
   } else if (command === "search") {
     const query = args.slice(1).filter((arg) => !arg.startsWith("--"))[0] || "";
     const data = await searchDirectory(query);
@@ -479,7 +534,7 @@ Options:
     const data = await updateSkills(catalog, { dryRun: args.includes("--dry-run") });
     emitSuccess(data, `${data.mutationPerformed ? "Updated" : "Plan:"} ${data.skills.length} skill${data.skills.length === 1 ? "" : "s"}`);
   } else {
-    throw new Error(`Unknown command: ${command}. Use list, add, add-source, add-url, plan, search, init, or update.`);
+    throw new Error(`Unknown command: ${command}. Use list, add, add-source, add-url, plan, search, verify, init, or update.`);
   }
 } catch (error) {
   emitError(error);

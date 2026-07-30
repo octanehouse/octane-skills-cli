@@ -31,6 +31,7 @@ const schemaPayload = JSON.parse(schema.stdout);
 assert(schemaPayload.schema_version === "1.0.0", "schema version drifted");
 assert(schemaPayload.commands.add.supports.includes("--dry-run"), "add lost dry-run support");
 assert(schemaPayload.commands.mcp.output === "mcp_config", "mcp command missing from schema");
+assert(schemaPayload.commands.verify.mutates === false, "verify must stay non-mutating");
 
 const mcp = await run(["mcp", "config", "--format", "json"]);
 assert(mcp.code === 0, "mcp config failed");

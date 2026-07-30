@@ -8,6 +8,7 @@ npx @octane-house/skills-cli list
 
 # No npm account required: run the public GitHub package directly
 npx --yes github:octanehouse/octane-skills-cli list
+npx --yes github:octanehouse/octane-skills-cli verify
 npx @octane-house/skills-cli add shader-gradient --dest .octane/skills
 npx @octane-house/skills-cli search shader --limit 20
 npx @octane-house/skills-cli add-source cloudai-x/threejs-skills --skill threejs-shaders --dest .octane/skills
@@ -63,3 +64,6 @@ versioned envelope:
 Validation failures return exit code `3`; runtime or network failures return
 exit code `1`. Mutating commands support `--dry-run` and never execute scripts
 from an imported skill.
+
+`verify` is read-only and checks the catalog shape plus every detail,
+`SKILL.md`, and raw resource route.
