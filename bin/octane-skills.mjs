@@ -7,7 +7,7 @@ const DEFAULT_MANIFEST = "https://marcusmfrancis.com/skills/catalog";
 const SKILLS_DIRECTORY_API = "https://www.skills.sh/api/search";
 const args = process.argv.slice(2);
 const command = args[0] || "list";
-const needsCatalog = new Set(["list", "add", "update"]);
+const needsCatalog = new Set(["list", "add", "plan", "update"]);
 
 function option(name, fallback) {
   const index = args.indexOf(name);
@@ -170,6 +170,24 @@ async function updateSkills(catalog) {
   }
 }
 
+function planSkill(catalog, slug) {
+  const skill = catalog.skills.find((item) => item.slug === slug);
+  if (!skill) throw new Error(`Unknown skill: ${slug}`);
+  console.log(JSON.stringify({
+    action: "skills/add",
+    slug: skill.slug,
+    name: skill.name,
+    category: skill.category,
+    source: skill.source,
+    repositoryUrl: skill.repositoryUrl ?? null,
+    skillUrl: new URL(skill.skillUrl, manifestUrl()).toString(),
+    installCommand: skill.installCommand,
+    writes: [`.octane/skills/${skill.slug}/SKILL.md`, ".octane/skills/octane-skills.lock.json"],
+    executesScripts: false,
+    requiresConfirmation: true,
+  }, null, 2));
+}
+
 try {
   const catalog = needsCatalog.has(command) ? await getCatalog() : null;
   if (command === "help" || command === "--help" || command === "-h") {
@@ -179,6 +197,7 @@ Commands:
   list                         List reviewed Octane Skills
   add <slug>                   Install a reviewed Octane Skill
   add-source <owner/repo>     Install a source skill from GitHub
+  plan <slug>                 Print a non-mutating install plan
   search <query>               Search skills.sh for intake candidates
   init <slug>                  Scaffold a new Octane Skill repository
   update                       Refresh installed skills from the lockfile
@@ -193,6 +212,8 @@ Options:
     await installSkill(catalog, args[1]);
   } else if (command === "add-source") {
     await addExternalSkill(args[1], option("--skill", args[2]));
+  } else if (command === "plan") {
+    planSkill(catalog, args[1]);
   } else if (command === "search") {
     await searchDirectory(args.slice(1).filter((arg) => !arg.startsWith("--"))[0] || "");
   } else if (command === "init") {
@@ -200,7 +221,7 @@ Options:
   } else if (command === "update") {
     await updateSkills(catalog);
   } else {
-    throw new Error(`Unknown command: ${command}. Use list, add, add-source, search, init, or update.`);
+    throw new Error(`Unknown command: ${command}. Use list, add, add-source, plan, search, init, or update.`);
   }
 } catch (error) {
   console.error(error instanceof Error ? error.message : error);
