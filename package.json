@@ -3,11 +3,34 @@
   "version": "0.1.0",
   "description": "Install and update reviewed Octane Skills into an agent skills directory.",
   "type": "module",
+  "files": [
+    "bin",
+    "README.md",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/octanehouse/octane-skills-cli.git"
+  },
+  "homepage": "https://marcusmfrancis.com/skills/octane-skills-cli",
+  "bugs": {
+    "url": "https://github.com/octanehouse/octane-skills-cli/issues"
+  },
+  "keywords": [
+    "octane",
+    "agent-skills",
+    "skills.sh",
+    "mcp",
+    "cli"
+  ],
   "bin": {
     "octane-skills": "bin/octane-skills.mjs"
   },
   "engines": {
     "node": ">=20"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  }
 }
