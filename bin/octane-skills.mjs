@@ -5,6 +5,8 @@ import { join, resolve } from "node:path";
 
 const DEFAULT_MANIFEST = "https://marcusmfrancis.com/skills/catalog";
 const SKILLS_DIRECTORY_API = "https://www.skills.sh/api/search";
+const CLI_VERSION = "0.2.0";
+const SCHEMA_VERSION = "1.0.0";
 const args = process.argv.slice(2);
 const command = args[0] || "list";
 const needsCatalog = new Set(["list", "add", "plan", "update"]);
@@ -17,6 +19,61 @@ function option(name, fallback) {
 function manifestUrl() {
   return option("--manifest", process.env.OCTANE_SKILLS_MANIFEST || DEFAULT_MANIFEST);
 }
+
+function outputFormat() {
+  const requested = option("--format", args.includes("--json") ? "json" : "");
+  if (requested && requested !== "json" && requested !== "table") {
+    throw new Error("--format must be json or table");
+  }
+  return requested || (process.stdout.isTTY ? "table" : "json");
+}
+
+function metadata() {
+  return { schema_version: SCHEMA_VERSION, cli_version: CLI_VERSION };
+}
+
+function emitSuccess(data, human) {
+  if (outputFormat() === "json") {
+    process.stdout.write(`${JSON.stringify({ ok: true, data, meta: metadata() })}\n`);
+    return;
+  }
+  process.stdout.write(`${human}\n`);
+}
+
+function emitError(error) {
+  const message = error instanceof Error ? error.message : String(error);
+  const validation = /invalid|must |required|unknown skill|use --skill|source must|skill id/i.test(message);
+  const payload = {
+    ok: false,
+    error: {
+      code: validation ? "validation_error" : "runtime_error",
+      message,
+      retryable: !validation,
+    },
+    meta: metadata(),
+  };
+  if (outputFormat() === "json") {
+    process.stdout.write(`${JSON.stringify(payload)}\n`);
+  } else {
+    process.stderr.write(`Error: ${message}\n`);
+  }
+  process.exitCode = validation ? 3 : 1;
+}
+
+const SCHEMA = {
+  schema_version: SCHEMA_VERSION,
+  cli_version: CLI_VERSION,
+  commands: {
+    list: { mutates: false, output: "catalog" },
+    add: { mutates: true, supports: ["--dry-run"], output: "install" },
+    "add-source": { mutates: true, supports: ["--dry-run"], output: "install" },
+    "add-url": { mutates: true, supports: ["--dry-run"], output: "install" },
+    plan: { mutates: false, output: "install_plan" },
+    search: { mutates: false, output: "directory_results" },
+    init: { mutates: true, supports: ["--dry-run"], output: "scaffold" },
+    update: { mutates: true, supports: ["--dry-run"], output: "update" },
+  },
+};
 
 async function getCatalog() {
   const response = await fetch(manifestUrl());
@@ -36,19 +93,45 @@ async function writeLockEntry(destination, entry, catalog) {
   await writeFile(lockPath, `${JSON.stringify(lock, null, 2)}\n`, "utf8");
 }
 
-async function installSkill(catalog, slug) {
+async function installSkill(catalog, slug, { dryRun = false } = {}) {
   const skill = catalog.skills.find((item) => item.slug === slug);
   if (!skill) throw new Error(`Unknown skill: ${slug}`);
   if (!skill.skillUrl) throw new Error(`Skill has no installer payload: ${slug}`);
 
   const destination = resolve(option("--dest", ".octane/skills"));
+  const skillDirectory = join(destination, slug);
+  const writes = [
+    join(skillDirectory, "SKILL.md"),
+    join(destination, "octane-skills.lock.json"),
+  ];
+  if (dryRun) {
+    return {
+      action: "skills/add",
+      slug,
+      name: skill.name,
+      category: skill.category,
+      source: skill.source,
+      repositoryUrl: skill.repositoryUrl ?? null,
+      skillUrl: new URL(skill.skillUrl, manifestUrl()).toString(),
+      writes,
+      executesScripts: false,
+      mutationPerformed: false,
+    };
+  }
   const response = await fetch(new URL(skill.skillUrl, manifestUrl()));
   if (!response.ok) throw new Error(`Skill request failed: ${response.status}`);
-  const skillDirectory = join(destination, slug);
   await mkdir(skillDirectory, { recursive: true });
   await writeFile(join(skillDirectory, "SKILL.md"), await response.text(), "utf8");
   await writeLockEntry(destination, { slug, skillUrl: skill.skillUrl, source: "octane" }, catalog);
-  console.log(`Installed ${skill.name} → ${join(skillDirectory, "SKILL.md")}`);
+  return {
+    action: "skills/add",
+    slug,
+    name: skill.name,
+    destination: join(skillDirectory, "SKILL.md"),
+    writes,
+    executesScripts: false,
+    mutationPerformed: true,
+  };
 }
 
 function sourceParts(value) {
@@ -79,7 +162,7 @@ async function createFileOnce(filePath, content) {
   await writeFile(filePath, content, { encoding: "utf8", flag: "wx" });
 }
 
-async function initSkill(slug) {
+async function initSkill(slug, { dryRun = false } = {}) {
   const safeSlug = validSlug(slug);
   const destination = resolve(option("--dest", "."));
   const name = option("--name", titleFromSlug(safeSlug));
@@ -87,6 +170,23 @@ async function initSkill(slug) {
   const description = option("--description", `A reusable Octane Skill for ${name}.`);
   const source = option("--source", "https://github.com/octanehouse");
   const skillDirectory = join(destination, "skills", safeSlug);
+  const writes = [
+    join(skillDirectory, "SKILL.md"),
+    join(destination, "octane-skill.json"),
+    join(destination, "README.md"),
+  ];
+  if (dryRun) {
+    return {
+      action: "skills/init",
+      slug: safeSlug,
+      name,
+      category,
+      destination,
+      writes,
+      executesScripts: false,
+      mutationPerformed: false,
+    };
+  }
   await mkdir(skillDirectory, { recursive: true });
   await createFileOnce(join(skillDirectory, "SKILL.md"), `---
 name: ${name}
@@ -122,7 +222,16 @@ Octane Skill: **${name}**
 
 Install the instruction file from \`skills/${safeSlug}/SKILL.md\` after reviewing the source.
 `);
-  console.log(`Scaffolded ${name} at ${destination}`);
+  return {
+    action: "skills/init",
+    slug: safeSlug,
+    name,
+    category,
+    destination,
+    writes,
+    executesScripts: false,
+    mutationPerformed: true,
+  };
 }
 
 function githubSkillUrl(value, skillId) {
@@ -181,16 +290,40 @@ async function fetchExternalSkill(source, skillId) {
   throw new Error(`Could not find a Markdown skill for ${skillId} in ${source}`);
 }
 
-async function addExternalSkill(source, skillId) {
+async function addExternalSkill(source, skillId, { dryRun = false } = {}) {
   if (!source) throw new Error("A source owner/repository or URL is required");
   if (!skillId) throw new Error("Use --skill <slug> to select the skill to install");
   const destination = resolve(option("--dest", ".octane/skills"));
-  const external = await fetchExternalSkill(source, skillId);
   const skillDirectory = join(destination, skillId);
+  const external = await fetchExternalSkill(source, skillId);
+  const writes = [
+    join(skillDirectory, "SKILL.md"),
+    join(destination, "octane-skills.lock.json"),
+  ];
+  if (dryRun) {
+    return {
+      action: "skills/add-source",
+      slug: skillId,
+      source,
+      sourceUrl: external.url,
+      writes,
+      executesScripts: false,
+      mutationPerformed: false,
+    };
+  }
   await mkdir(skillDirectory, { recursive: true });
   await writeFile(join(skillDirectory, "SKILL.md"), external.markdown, "utf8");
   await writeLockEntry(destination, { slug: skillId, source: source, sourceUrl: external.url }, undefined);
-  console.log(`Installed external source ${source} (${skillId}) → ${join(skillDirectory, "SKILL.md")}`);
+  return {
+    action: "skills/add-source",
+    slug: skillId,
+    source,
+    sourceUrl: external.url,
+    destination: join(skillDirectory, "SKILL.md"),
+    writes,
+    executesScripts: false,
+    mutationPerformed: true,
+  };
 }
 
 async function searchDirectory(query) {
@@ -200,15 +333,21 @@ async function searchDirectory(query) {
   const response = await fetch(endpoint);
   if (!response.ok) throw new Error(`skills.sh request failed: ${response.status}`);
   const payload = await response.json();
-  for (const skill of payload.skills || []) {
-    console.log(`${skill.source}/${skill.skillId}\t${skill.installs ?? 0} installs\t${skill.name}`);
-  }
+  return (payload.skills || []).map((skill) => ({
+    source: skill.source,
+    skillId: skill.skillId,
+    installs: skill.installs ?? 0,
+    name: skill.name,
+  }));
 }
 
-async function updateSkills(catalog) {
+async function updateSkills(catalog, { dryRun = false } = {}) {
   const destination = resolve(option("--dest", ".octane/skills"));
   const lock = JSON.parse(await readFile(join(destination, "octane-skills.lock.json"), "utf8"));
+  const updates = [];
   for (const entry of lock.skills || []) {
+    updates.push({ slug: entry.slug, source: entry.source || "octane" });
+    if (dryRun) continue;
     if (entry.sourceUrl) {
       const response = await fetch(entry.sourceUrl);
       if (!response.ok) throw new Error(`External skill request failed: ${response.status}`);
@@ -217,12 +356,18 @@ async function updateSkills(catalog) {
       await installSkill(catalog, entry.slug);
     }
   }
+  return {
+    action: "skills/update",
+    destination,
+    skills: updates,
+    mutationPerformed: !dryRun,
+  };
 }
 
 function planSkill(catalog, slug) {
   const skill = catalog.skills.find((item) => item.slug === slug);
   if (!skill) throw new Error(`Unknown skill: ${slug}`);
-  console.log(JSON.stringify({
+  return {
     action: "skills/add",
     slug: skill.slug,
     name: skill.name,
@@ -234,13 +379,13 @@ function planSkill(catalog, slug) {
     writes: [`.octane/skills/${skill.slug}/SKILL.md`, ".octane/skills/octane-skills.lock.json"],
     executesScripts: false,
     requiresConfirmation: true,
-  }, null, 2));
+  };
 }
 
 try {
   const catalog = needsCatalog.has(command) ? await getCatalog() : null;
   if (command === "help" || command === "--help" || command === "-h") {
-    console.log(`Octane Skills CLI
+    process.stdout.write(`Octane Skills CLI
 
 Commands:
   list                         List reviewed Octane Skills
@@ -257,27 +402,40 @@ Options:
   --skill <slug>              Skill directory/id for source and URL imports
   --branch <name>             Git branch for owner/repository imports
   --manifest <url>            Catalog endpoint (defaults to marcusmfrancis.com)
+  --format json|table          Stable JSON envelopes or human-readable tables
+  --dry-run                   Preview a write without changing the filesystem
+  schema                      Print the versioned command schema
 `);
+  } else if (command === "schema") {
+    process.stdout.write(`${JSON.stringify(SCHEMA, null, 2)}\n`);
   } else if (command === "list") {
-    for (const skill of catalog.skills) console.log(`${skill.slug}\t${skill.category}\t${skill.name}`);
+    const data = { skills: catalog.skills.map(({ slug, category, name }) => ({ slug, category, name })), count: catalog.skills.length };
+    emitSuccess(data, data.skills.map((skill) => `${skill.slug}\t${skill.category}\t${skill.name}`).join("\n"));
   } else if (command === "add") {
-    await installSkill(catalog, args[1]);
+    const data = await installSkill(catalog, args[1], { dryRun: args.includes("--dry-run") });
+    emitSuccess(data, data.mutationPerformed ? `Installed ${data.name} → ${data.destination}` : `Plan: ${data.slug} → ${data.writes.join(", ")}`);
   } else if (command === "add-source") {
-    await addExternalSkill(args[1], option("--skill", args[2]));
+    const data = await addExternalSkill(args[1], option("--skill", args[2]), { dryRun: args.includes("--dry-run") });
+    emitSuccess(data, data.mutationPerformed ? `Installed external source ${data.source} (${data.slug}) → ${data.destination}` : `Plan: ${data.slug} → ${data.writes.join(", ")}`);
   } else if (command === "add-url") {
-    await addExternalSkill(args[1], option("--skill", args[2]));
+    const data = await addExternalSkill(args[1], option("--skill", args[2]), { dryRun: args.includes("--dry-run") });
+    emitSuccess(data, data.mutationPerformed ? `Installed external source ${data.source} (${data.slug}) → ${data.destination}` : `Plan: ${data.slug} → ${data.writes.join(", ")}`);
   } else if (command === "plan") {
-    planSkill(catalog, args[1]);
+    const data = planSkill(catalog, args[1]);
+    emitSuccess(data, JSON.stringify(data, null, 2));
   } else if (command === "search") {
-    await searchDirectory(args.slice(1).filter((arg) => !arg.startsWith("--"))[0] || "");
+    const query = args.slice(1).filter((arg) => !arg.startsWith("--"))[0] || "";
+    const data = await searchDirectory(query);
+    emitSuccess({ query, skills: data, count: data.length }, data.map((skill) => `${skill.source}/${skill.skillId}\t${skill.installs} installs\t${skill.name}`).join("\n"));
   } else if (command === "init") {
-    await initSkill(args[1]);
+    const data = await initSkill(args[1], { dryRun: args.includes("--dry-run") });
+    emitSuccess(data, data.mutationPerformed ? `Scaffolded ${data.name} at ${data.destination}` : `Plan: scaffold ${data.name} at ${data.destination}`);
   } else if (command === "update") {
-    await updateSkills(catalog);
+    const data = await updateSkills(catalog, { dryRun: args.includes("--dry-run") });
+    emitSuccess(data, `${data.mutationPerformed ? "Updated" : "Plan:"} ${data.skills.length} skill${data.skills.length === 1 ? "" : "s"}`);
   } else {
     throw new Error(`Unknown command: ${command}. Use list, add, add-source, add-url, plan, search, init, or update.`);
   }
 } catch (error) {
-  console.error(error instanceof Error ? error.message : error);
-  process.exitCode = 1;
+  emitError(error);
 }

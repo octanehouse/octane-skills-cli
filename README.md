@@ -14,6 +14,10 @@ npx @octane-house/skills-cli add-source cloudai-x/threejs-skills --skill threejs
 npx --yes github:octanehouse/octane-skills-cli add-url https://github.com/anthropics/skills/tree/main/skills/frontend-design --skill frontend-design --dest .octane/skills
 npx @octane-house/skills-cli init compression-tool --name "Octane Compression Tool" --category Visual --dest ./compression-skill
 npx @octane-house/skills-cli update --dest .octane/skills
+
+# Agent-facing contract
+npx @octane-house/skills-cli schema
+npx @octane-house/skills-cli add shader-gradient --dry-run --format json
 ```
 
 The package only downloads Markdown instruction payloads and writes a lock
@@ -38,3 +42,15 @@ workflow does not require a long-lived `NPM_TOKEN`.
 `--branch`. It resolves `skills/<id>/SKILL.md`, `<id>/SKILL.md`, or a root
 `SKILL.md`. `add-url` accepts a direct Markdown URL or the same GitHub tree/blob
 form. Both commands save the resolved Markdown source URL in the lock file.
+
+When stdout is a terminal, commands use compact human-readable tables. When
+stdout is redirected or `--format json` is supplied, every result uses a
+versioned envelope:
+
+```json
+{"ok":true,"data":{},"meta":{"schema_version":"1.0.0","cli_version":"0.2.0"}}
+```
+
+Validation failures return exit code `3`; runtime or network failures return
+exit code `1`. Mutating commands support `--dry-run` and never execute scripts
+from an imported skill.

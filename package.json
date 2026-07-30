@@ -1,6 +1,6 @@
 {
   "name": "@octane-house/skills-cli",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Install and update reviewed Octane Skills into an agent skills directory.",
   "type": "module",
   "files": [
