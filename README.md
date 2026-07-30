@@ -15,6 +15,9 @@ npx --yes github:octanehouse/octane-skills-cli add-url https://github.com/anthro
 npx @octane-house/skills-cli init compression-tool --name "Octane Compression Tool" --category Visual --dest ./compression-skill
 npx @octane-house/skills-cli update --dest .octane/skills
 
+# MCP connection handoff
+npx --yes github:octanehouse/octane-skills-cli mcp config
+
 # Agent-facing contract
 npx @octane-house/skills-cli schema
 npx @octane-house/skills-cli add shader-gradient --dry-run --format json
@@ -24,6 +27,11 @@ npm test
 The package only downloads Markdown instruction payloads and writes a lock
 file. It does not execute install scripts. The GitHub form is the current
 public distribution path; the npm form is release-ready.
+
+`mcp config` is read-only. It prints the Streamable HTTP endpoint, a Claude
+Code command, and a JSON `mcpServers` block. The public endpoint exposes
+catalog discovery and scaffold planning; write actions remain authenticated
+and explicitly confirmed by the server.
 
 For the one-time npm release setup, authenticate to npm and register the
 repository's GitHub Actions workflow as a trusted publisher:

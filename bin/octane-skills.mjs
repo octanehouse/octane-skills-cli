@@ -72,6 +72,7 @@ const SCHEMA = {
     search: { mutates: false, output: "directory_results" },
     init: { mutates: true, supports: ["--dry-run"], output: "scaffold" },
     update: { mutates: true, supports: ["--dry-run"], output: "update" },
+    mcp: { mutates: false, output: "mcp_config" },
   },
 };
 
@@ -390,6 +391,35 @@ function planSkill(catalog, slug) {
   };
 }
 
+function mcpConfig() {
+  const endpoint = option("--url", DEFAULT_MANIFEST.replace("/skills/catalog", "/mcp"));
+  const name = option("--name", "octane-house");
+  let parsed;
+  try {
+    parsed = new URL(endpoint);
+  } catch {
+    throw new Error("MCP endpoint must be a valid http or https URL");
+  }
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+    throw new Error("MCP endpoint must use http or https");
+  }
+  if (!/^[a-z0-9][a-z0-9-]*$/.test(name)) {
+    throw new Error("MCP server name must use lowercase letters, numbers, and hyphens");
+  }
+  const claudeCommand = `claude mcp add --transport http ${name} ${endpoint}`;
+  const config = { mcpServers: { [name]: { url: endpoint } } };
+  return {
+    action: "mcp/config",
+    name,
+    endpoint,
+    transport: "streamable-http",
+    readOnlyUntilConfigured: true,
+    requiresAuthForWrites: true,
+    claudeCommand,
+    config,
+  };
+}
+
 try {
   const catalog = needsCatalog.has(command) ? await getCatalog() : null;
   if (command === "help" || command === "--help" || command === "-h") {
@@ -404,6 +434,7 @@ Commands:
   search <query>               Search skills.sh for intake candidates
   init <slug>                  Scaffold a new Octane Skill repository
   update                       Refresh installed skills from the lockfile
+  mcp config                   Print an MCP client command and JSON config
 
 Options:
   --dest <path>               Destination directory
@@ -416,6 +447,12 @@ Options:
 `);
   } else if (command === "schema") {
     process.stdout.write(`${JSON.stringify(SCHEMA, null, 2)}\n`);
+  } else if (command === "mcp") {
+    if (args[1] && args[1] !== "config") {
+      throw new Error(`Unknown mcp action: ${args[1]}. Use mcp config.`);
+    }
+    const data = mcpConfig();
+    emitSuccess(data, `${data.claudeCommand}\n${JSON.stringify(data.config, null, 2)}`);
   } else if (command === "list") {
     const data = { skills: catalog.skills.map(({ slug, category, name }) => ({ slug, category, name })), count: catalog.skills.length };
     emitSuccess(data, data.skills.map((skill) => `${skill.slug}\t${skill.category}\t${skill.name}`).join("\n"));
