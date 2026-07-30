@@ -85,7 +85,7 @@ async function initSkill(slug) {
   const name = option("--name", titleFromSlug(safeSlug));
   const category = option("--category", "Visual");
   const description = option("--description", `A reusable Octane Skill for ${name}.`);
-  const source = option("--source", "https://github.com/octane-house");
+  const source = option("--source", "https://github.com/octanehouse");
   const skillDirectory = join(destination, "skills", safeSlug);
   await mkdir(skillDirectory, { recursive: true });
   await createFileOnce(join(skillDirectory, "SKILL.md"), `---
