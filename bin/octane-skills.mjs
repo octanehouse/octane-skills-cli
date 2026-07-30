@@ -333,12 +333,20 @@ async function searchDirectory(query) {
   const response = await fetch(endpoint);
   if (!response.ok) throw new Error(`skills.sh request failed: ${response.status}`);
   const payload = await response.json();
-  return (payload.skills || []).map((skill) => ({
-    source: skill.source,
-    skillId: skill.skillId,
-    installs: skill.installs ?? 0,
-    name: skill.name,
-  }));
+  return (payload.skills || []).map((skill) => {
+    const source = skill.source || "unknown/unknown";
+    const skillId = skill.skillId || skill.name || "skill";
+    return {
+      source,
+      skillId,
+      installs: skill.installs ?? 0,
+      name: skill.name || skillId,
+      reviewed: false,
+      sourceUrl: `https://github.com/${source}`,
+      directoryUrl: `https://www.skills.sh/${source}/${skillId}`,
+      installCommand: `npx --yes github:octanehouse/octane-skills-cli add-source ${source} --skill ${skillId} --dest .octane/skills`,
+    };
+  });
 }
 
 async function updateSkills(catalog, { dryRun = false } = {}) {
