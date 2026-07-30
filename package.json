@@ -1,0 +1,13 @@
+{
+  "name": "@octane-house/skills-cli",
+  "version": "0.1.0",
+  "description": "Install and update reviewed Octane Skills into an agent skills directory.",
+  "type": "module",
+  "bin": {
+    "octane-skills": "bin/octane-skills.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT"
+}
