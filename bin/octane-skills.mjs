@@ -52,10 +52,16 @@ async function installSkill(catalog, slug) {
 }
 
 function sourceParts(value) {
-  if (!/^[^/]+\/[^/]+$/.test(value || "")) {
-    throw new Error("Source must look like owner/repository");
+  if (/^[^/]+\/[^/]+$/.test(value || "")) return value.split("/");
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:" || url.hostname !== "github.com") throw new Error();
+    const parts = url.pathname.split("/").filter(Boolean);
+    if (parts.length < 2) throw new Error();
+    return parts.slice(0, 2);
+  } catch {
+    throw new Error("Source must look like owner/repository or a GitHub URL");
   }
-  return value.split("/");
 }
 
 function validSlug(value) {
@@ -119,29 +125,71 @@ Install the instruction file from \`skills/${safeSlug}/SKILL.md\` after reviewin
   console.log(`Scaffolded ${name} at ${destination}`);
 }
 
+function githubSkillUrl(value, skillId) {
+  const url = new URL(value);
+  if (url.protocol !== "https:" || url.hostname !== "github.com") return null;
+  const parts = url.pathname.split("/").filter(Boolean);
+  if (parts.length < 2) return null;
+  const [owner, repository, kind, ref, ...path] = parts;
+  if (kind !== "tree" && kind !== "blob") return null;
+  const sourcePath = path.length ? path : ["skills", skillId];
+  const markdownPath = sourcePath.at(-1) === "SKILL.md" ? sourcePath : [...sourcePath, "SKILL.md"];
+  return `https://raw.githubusercontent.com/${owner}/${repository}/${ref}/${markdownPath.join("/")}`;
+}
+
+function directSkillUrl(value, skillId) {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:") throw new Error();
+    if (url.hostname === "raw.githubusercontent.com") return url.toString();
+    if (url.hostname === "github.com") return githubSkillUrl(value, skillId);
+    if (url.pathname.endsWith(".md")) return url.toString();
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+async function fetchMarkdown(url) {
+  const response = await fetch(url);
+  if (response.ok) return { markdown: await response.text(), url };
+  return null;
+}
+
 async function fetchExternalSkill(source, skillId) {
-  const [owner, repository] = sourceParts(source);
   if (!/^[a-zA-Z0-9._-]+$/.test(skillId || "")) throw new Error("Skill id contains invalid characters");
+  const explicitUrl = directSkillUrl(source, skillId);
+  if (explicitUrl) {
+    const result = await fetchMarkdown(explicitUrl);
+    if (result) return result;
+    throw new Error(`Could not fetch a Markdown skill from ${source}`);
+  }
+  const [owner, repository] = sourceParts(source);
+  const branch = option("--branch", "");
+  const branches = branch ? [branch] : ["main", "master"];
   const candidates = [
-    `https://raw.githubusercontent.com/${owner}/${repository}/main/skills/${skillId}/SKILL.md`,
-    `https://raw.githubusercontent.com/${owner}/${repository}/master/skills/${skillId}/SKILL.md`,
-    `https://raw.githubusercontent.com/${owner}/${repository}/main/${skillId}/SKILL.md`,
+    ...branches.flatMap((ref) => [
+      `https://raw.githubusercontent.com/${owner}/${repository}/${ref}/skills/${skillId}/SKILL.md`,
+      `https://raw.githubusercontent.com/${owner}/${repository}/${ref}/${skillId}/SKILL.md`,
+    ]),
   ];
   for (const url of candidates) {
-    const response = await fetch(url);
-    if (response.ok) return { markdown: await response.text(), url };
+    const result = await fetchMarkdown(url);
+    if (result) return result;
   }
-  throw new Error(`Could not find skills/${skillId}/SKILL.md in ${source}`);
+  throw new Error(`Could not find a Markdown skill for ${skillId} in ${source}`);
 }
 
 async function addExternalSkill(source, skillId) {
+  if (!source) throw new Error("A source owner/repository or URL is required");
+  if (!skillId) throw new Error("Use --skill <slug> to select the skill to install");
   const destination = resolve(option("--dest", ".octane/skills"));
   const external = await fetchExternalSkill(source, skillId);
   const skillDirectory = join(destination, skillId);
   await mkdir(skillDirectory, { recursive: true });
   await writeFile(join(skillDirectory, "SKILL.md"), external.markdown, "utf8");
   await writeLockEntry(destination, { slug: skillId, source: source, sourceUrl: external.url }, undefined);
-  console.log(`Installed external source ${source}/${skillId} → ${join(skillDirectory, "SKILL.md")}`);
+  console.log(`Installed external source ${source} (${skillId}) → ${join(skillDirectory, "SKILL.md")}`);
 }
 
 async function searchDirectory(query) {
@@ -197,6 +245,7 @@ Commands:
   list                         List reviewed Octane Skills
   add <slug>                   Install a reviewed Octane Skill
   add-source <owner/repo>     Install a source skill from GitHub
+  add-url <url>                Install a Markdown or GitHub tree/blob skill URL
   plan <slug>                 Print a non-mutating install plan
   search <query>               Search skills.sh for intake candidates
   init <slug>                  Scaffold a new Octane Skill repository
@@ -204,6 +253,8 @@ Commands:
 
 Options:
   --dest <path>               Destination directory
+  --skill <slug>              Skill directory/id for source and URL imports
+  --branch <name>             Git branch for owner/repository imports
   --manifest <url>            Catalog endpoint (defaults to marcusmfrancis.com)
 `);
   } else if (command === "list") {
@@ -211,6 +262,8 @@ Options:
   } else if (command === "add") {
     await installSkill(catalog, args[1]);
   } else if (command === "add-source") {
+    await addExternalSkill(args[1], option("--skill", args[2]));
+  } else if (command === "add-url") {
     await addExternalSkill(args[1], option("--skill", args[2]));
   } else if (command === "plan") {
     planSkill(catalog, args[1]);
@@ -221,7 +274,7 @@ Options:
   } else if (command === "update") {
     await updateSkills(catalog);
   } else {
-    throw new Error(`Unknown command: ${command}. Use list, add, add-source, plan, search, init, or update.`);
+    throw new Error(`Unknown command: ${command}. Use list, add, add-source, add-url, plan, search, init, or update.`);
   }
 } catch (error) {
   console.error(error instanceof Error ? error.message : error);
