@@ -171,6 +171,7 @@ async function fetchExternalSkill(source, skillId) {
     ...branches.flatMap((ref) => [
       `https://raw.githubusercontent.com/${owner}/${repository}/${ref}/skills/${skillId}/SKILL.md`,
       `https://raw.githubusercontent.com/${owner}/${repository}/${ref}/${skillId}/SKILL.md`,
+      `https://raw.githubusercontent.com/${owner}/${repository}/${ref}/SKILL.md`,
     ]),
   ];
   for (const url of candidates) {

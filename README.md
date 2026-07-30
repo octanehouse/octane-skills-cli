@@ -22,5 +22,6 @@ public distribution path; the npm form is ready for publication when the
 `@octane-house` namespace is authenticated.
 
 `add-source` accepts `owner/repository`, a GitHub tree/blob URL, and an optional
-`--branch`. `add-url` accepts a direct Markdown URL or the same GitHub tree/blob
+`--branch`. It resolves `skills/<id>/SKILL.md`, `<id>/SKILL.md`, or a root
+`SKILL.md`. `add-url` accepts a direct Markdown URL or the same GitHub tree/blob
 form. Both commands save the resolved Markdown source URL in the lock file.
