@@ -18,8 +18,9 @@ npx @octane-house/skills-cli update --dest .octane/skills
 
 The package only downloads Markdown instruction payloads and writes a lock
 file. It does not execute install scripts. The GitHub form is the current
-public distribution path; the npm form is ready for publication when the
-`@octane-house` namespace is authenticated.
+public distribution path; the npm form is release-ready. npm Trusted
+Publishing can be configured for the `publish.yml` GitHub workflow so the
+release does not need a long-lived npm token.
 
 `add-source` accepts `owner/repository`, a GitHub tree/blob URL, and an optional
 `--branch`. It resolves `skills/<id>/SKILL.md`, `<id>/SKILL.md`, or a root
