@@ -9,6 +9,7 @@ npx @octane-house/skills-cli list
 # No npm account required: run the public GitHub package directly
 npx --yes github:octanehouse/octane-skills-cli list
 npx --yes github:octanehouse/octane-skills-cli verify
+npx --yes github:octanehouse/octane-skills-cli deploy plan
 npx @octane-house/skills-cli add shader-gradient --dest .octane/skills
 npx @octane-house/skills-cli search shader --limit 20
 npx @octane-house/skills-cli add-source cloudai-x/threejs-skills --skill threejs-shaders --dest .octane/skills
@@ -67,3 +68,8 @@ from an imported skill.
 
 `verify` is read-only and checks the catalog shape plus every detail,
 `SKILL.md`, and raw resource route.
+
+`deploy plan` is the safe handoff for an agent or operator. It returns the
+target, scope, release checks, and authentication boundary without changing
+production. Actual deployment remains behind the configured provider workflow
+or authenticated MCP request.

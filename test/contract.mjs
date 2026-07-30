@@ -32,6 +32,14 @@ assert(schemaPayload.schema_version === "1.0.0", "schema version drifted");
 assert(schemaPayload.commands.add.supports.includes("--dry-run"), "add lost dry-run support");
 assert(schemaPayload.commands.mcp.output === "mcp_config", "mcp command missing from schema");
 assert(schemaPayload.commands.verify.mutates === false, "verify must stay non-mutating");
+assert(schemaPayload.commands.deploy.output === "deploy_plan", "deploy plan missing from schema");
+
+const deploy = await run(["deploy", "plan", "--format", "json"]);
+assert(deploy.code === 0, "deploy plan failed");
+const deployPayload = JSON.parse(deploy.stdout);
+assert(deployPayload.ok === true, "deploy plan did not return a success envelope");
+assert(deployPayload.data.mutationPerformed === false, "deploy plan claims it mutated state");
+assert(deployPayload.data.requiresAuth === true, "deploy plan lost auth boundary");
 
 const mcp = await run(["mcp", "config", "--format", "json"]);
 assert(mcp.code === 0, "mcp config failed");

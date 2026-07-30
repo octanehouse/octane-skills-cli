@@ -71,6 +71,7 @@ const SCHEMA = {
     plan: { mutates: false, output: "install_plan" },
     search: { mutates: false, output: "directory_results" },
     verify: { mutates: false, output: "verification" },
+    deploy: { mutates: false, output: "deploy_plan" },
     init: { mutates: true, supports: ["--dry-run"], output: "scaffold" },
     update: { mutates: true, supports: ["--dry-run"], output: "update" },
     mcp: { mutates: false, output: "mcp_config" },
@@ -441,6 +442,27 @@ async function verifyCatalog(catalog) {
   };
 }
 
+function deployPlan() {
+  const target = option("--target", "marcusmfrancis.com");
+  const scope = option("--scope", "site");
+  if (target !== "marcusmfrancis.com") {
+    throw new Error("Deploy target must be marcusmfrancis.com");
+  }
+  if (!["site", "skill-catalog"].includes(scope)) {
+    throw new Error("Deploy scope must be site or skill-catalog");
+  }
+  return {
+    action: "deploy/plan",
+    target,
+    scope,
+    checks: ["npm run typecheck", "npm run build", "npm run skills:verify"],
+    requiresAuth: true,
+    mutationPerformed: false,
+    writeBoundary: "MCP deploy/request or the configured Cloudflare release workflow",
+    note: "This command only creates a plan. It never changes production.",
+  };
+}
+
 function mcpConfig() {
   const endpoint = option("--url", DEFAULT_MANIFEST.replace("/skills/catalog", "/mcp"));
   const name = option("--name", "octane-house");
@@ -483,6 +505,7 @@ Commands:
   plan <slug>                 Print a non-mutating install plan
   search <query>               Search skills.sh for intake candidates
   verify                       Verify catalog and public resource routes
+  deploy plan                 Print a non-mutating release plan
   init <slug>                  Scaffold a new Octane Skill repository
   update                       Refresh installed skills from the lockfile
   mcp config                   Print an MCP client command and JSON config
@@ -504,6 +527,12 @@ Options:
     }
     const data = mcpConfig();
     emitSuccess(data, `${data.claudeCommand}\n${JSON.stringify(data.config, null, 2)}`);
+  } else if (command === "deploy") {
+    if (args[1] && args[1] !== "plan") {
+      throw new Error(`Unknown deploy action: ${args[1]}. Use deploy plan.`);
+    }
+    const data = deployPlan();
+    emitSuccess(data, JSON.stringify(data, null, 2));
   } else if (command === "list") {
     const data = { skills: catalog.skills.map(({ slug, category, name }) => ({ slug, category, name })), count: catalog.skills.length };
     emitSuccess(data, data.skills.map((skill) => `${skill.slug}\t${skill.category}\t${skill.name}`).join("\n"));
@@ -534,7 +563,7 @@ Options:
     const data = await updateSkills(catalog, { dryRun: args.includes("--dry-run") });
     emitSuccess(data, `${data.mutationPerformed ? "Updated" : "Plan:"} ${data.skills.length} skill${data.skills.length === 1 ? "" : "s"}`);
   } else {
-    throw new Error(`Unknown command: ${command}. Use list, add, add-source, add-url, plan, search, verify, init, or update.`);
+    throw new Error(`Unknown command: ${command}. Use list, add, add-source, add-url, plan, search, verify, deploy, init, or update.`);
   }
 } catch (error) {
   emitError(error);
